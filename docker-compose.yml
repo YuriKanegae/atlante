@@ -23,12 +23,12 @@ services:
       dockerfile: DockerFile
     restart: unless-stopped
     volumes:
-      - /opt/tiles:/opt/tiles:ro
+      - /opt/maps/tiles:/opt/tiles:ro
     networks:
       - web
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.tiles.rule=Host(`atlante.kanegae.com.br`) && (PathPrefix(`/tiles`) || PathPrefix(`/fonts`) || PathPrefix(`/sprites`) || Path(`/style.json`))"
+      - "traefik.http.routers.tiles.rule=Host(`atlante.yurikanegae.com`) && (PathPrefix(`/tiles`) || PathPrefix(`/fonts`) || PathPrefix(`/sprites`) || Path(`/style.json`))"
       - traefik.http.routers.tiles.entrypoints=websecure
       - traefik.http.routers.tiles.tls.certresolver=le
       - traefik.http.services.tiles.loadbalancer.server.port=80
