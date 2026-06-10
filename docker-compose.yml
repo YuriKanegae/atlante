@@ -1,0 +1,37 @@
+# Antes do primeiro 'up', crie o arquivo de certificados:
+#     touch infra/traefik/acme.json && chmod 600 infra/traefik/acme.json
+#
+# Rode com:  docker compose up --build -d
+
+services:
+  traefik:
+    image: traefik:v3.3
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./infra/traefik/acme.json:/acme.json
+    networks:
+      - web
+
+  tileserver:
+    build:
+      context: ./infra/tileserver
+      dockerfile: DockerFile
+    restart: unless-stopped
+    volumes:
+      - /opt/tiles:/opt/tiles:ro
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.tiles.rule=Host(`atlante.kanegae.com.br`) && (PathPrefix(`/tiles`) || PathPrefix(`/fonts`) || PathPrefix(`/sprites`) || Path(`/style.json`))"
+      - traefik.http.routers.tiles.entrypoints=websecure
+      - traefik.http.routers.tiles.tls.certresolver=le
+      - traefik.http.services.tiles.loadbalancer.server.port=80
+
+networks:
+  web:
