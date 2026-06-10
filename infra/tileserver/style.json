@@ -24,11 +24,11 @@
   "sources": {
     "openmaptiles": {
       "type": "vector",
-      "url": "pmtiles://https://atlante.kanegae.com.br/tiles/sp.pmtiles"
+      "url": "pmtiles://https://atlante.yurikanegae.com/tiles/sp.pmtiles"
     }
   },
-  "sprite": "https://atlante.kanegae.com.br/sprites/sprite",
-  "glyphs": "https://atlante.kanegae.com.br/fonts/{fontstack}/{range}.pbf",
+  "sprite": "https://atlante.yurikanegae.com/sprites/sprite",
+  "glyphs": "https://atlante.yurikanegae.com/fonts/{fontstack}/{range}.pbf",
   "layers": [
     {
       "id": "background",

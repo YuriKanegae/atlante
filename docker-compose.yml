@@ -33,5 +33,20 @@ services:
       - traefik.http.routers.tiles.tls.certresolver=le
       - traefik.http.services.tiles.loadbalancer.server.port=80
 
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: DockerFile
+    restart: unless-stopped
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.frontend.rule=Host(`atlante.yurikanegae.com`)"
+      - traefik.http.routers.frontend.priority=1
+      - traefik.http.routers.frontend.entrypoints=websecure
+      - traefik.http.routers.frontend.tls.certresolver=le
+      - traefik.http.services.frontend.loadbalancer.server.port=80
+
 networks:
   web:
