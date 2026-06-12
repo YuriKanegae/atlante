@@ -1,15 +1,20 @@
-import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
+import { serve }           from "@hono/node-server";
+import { loadConfig }      from "./config.js";
+import { createContainer } from "./container.js";
+import { createApp }       from "./app.js";
 
-const app = new Hono()
+/**
+ * Composition root: lê a configuração, resolve o container de dependências
+ * (abre o banco uma única vez) e sobe o servidor HTTP.
+ */
+function main(): void {
+  const config    = loadConfig();
+  const container = createContainer(config);
+  const app       = createApp(container);
 
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
+  serve({ fetch: app.fetch, port: config.port }, (info) => {
+    console.log(`Geocode rodando em http://localhost:${info.port}`);
+  });
+}
 
-serve({
-  fetch: app.fetch,
-  port: 3000
-}, (info) => {
-  console.log(`Server is running on http://localhost:${info.port}`)
-})
+main();

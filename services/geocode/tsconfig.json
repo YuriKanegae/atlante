@@ -4,7 +4,9 @@
     "module": "NodeNext",
     "strict": true,
     "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
+    "rootDir": "./src",
     "types": [
       "node"
     ],
