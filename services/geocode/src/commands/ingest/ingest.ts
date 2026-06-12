@@ -9,8 +9,18 @@ import type Endereco      from "../../modules/endereco.js";
 
 const COMMIT_EVERY = 100_000;
 
-/** Faixa de numeração observada numa via (para estimar o número). */
-type NumberRange = { min: number; max: number };
+/**
+ * Informação agregada por via (no 1º passe), usada para enriquecer cada
+ * registro: faixa de numeração (estimativa de número) e a cidade/bairro mais
+ * frequentes entre os pontos da via (para preencher quando o objeto não traz).
+ */
+type StreetInfo = {
+  min:        number;
+  max:        number;
+  hasNumbers: boolean;
+  cidades:    Map<string, number>;
+  bairros:    Map<string, number>;
+};
 
 /** Opções de ingestão; `source` é injetável para testes. */
 interface IngestOptions {
@@ -29,25 +39,60 @@ function parseHouseNumber(raw: string | null): number | null {
   return match ? Number(match[0]) : null;
 }
 
-/** Acumula a faixa min–max de numeração por via normalizada (1º passe). */
-function collectRange(
-  ranges: Map<string, NumberRange>,
-  feature: OsmFeature,
-): void {
-  const numero = parseHouseNumber(feature.numeroRaw);
-  if (numero === null) return;
-
-  const key = normalize(feature.street);
-  const range = ranges.get(key);
-  if (!range) {
-    ranges.set(key, { min: numero, max: numero });
-    return;
-  }
-  if (numero < range.min) range.min = numero;
-  if (numero > range.max) range.max = numero;
+/** Incrementa a contagem de um valor num mapa de frequências. */
+function bump(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
-/** Monta a string legível do endereço a partir da feature. */
+/** Retorna a chave mais frequente do mapa, ou `null` se vazio. */
+function mode(counts: Map<string, number>): string | null {
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [key, count] of counts) {
+    if (count > bestCount) {
+      bestCount = count;
+      best = key;
+    }
+  }
+  return best;
+}
+
+/**
+ * Acumula, por via normalizada, a faixa de numeração e as cidades/bairros
+ * vistos nos seus pontos (1º passe).
+ */
+function collectStreet(
+  streets: Map<string, StreetInfo>,
+  feature: OsmFeature,
+): void {
+  const key = normalize(feature.street);
+  let info = streets.get(key);
+  if (!info) {
+    info = {
+      min:        Infinity,
+      max:        -Infinity,
+      hasNumbers: false,
+      cidades:    new Map(),
+      bairros:    new Map(),
+    };
+    streets.set(key, info);
+  }
+
+  const numero = parseHouseNumber(feature.numeroRaw);
+  if (numero !== null) {
+    info.hasNumbers = true;
+    if (numero < info.min) info.min = numero;
+    if (numero > info.max) info.max = numero;
+  }
+  if (feature.cidade) bump(info.cidades, feature.cidade);
+  if (feature.bairro) bump(info.bairros, feature.bairro);
+}
+
+/**
+ * Monta a string legível do endereço a partir da feature.
+ * Usada tanto para o `label` exibido (com cidade/bairro enriquecidos) quanto,
+ * com as tags próprias, para o `texto` indexado.
+ */
 function buildLabel(feature: OsmFeature): string {
   const parts: string[] = [];
   parts.push(feature.numeroRaw ? `${feature.street}, ${feature.numeroRaw}` : feature.street);
@@ -57,33 +102,36 @@ function buildLabel(feature: OsmFeature): string {
 }
 
 /**
- * Finaliza uma feature em Endereco, resolvendo o número:
- * usa o número real quando existe; senão estima pelo ponto médio da faixa
- * conhecida da via (min–max agregado no 1º passe).
+ * Finaliza uma feature em Endereco, enriquecendo com a informação da via:
+ * - cidade/bairro: usa o do próprio objeto; quando ausente, o mais frequente
+ *   da via (ruas raramente trazem essas tags, então herdam dos seus pontos);
+ * - número: usa o real quando existe; senão estima pelo ponto médio da faixa
+ *   conhecida da via (min–max agregado no 1º passe).
  */
 function finalize(
   feature: OsmFeature,
-  ranges: Map<string, NumberRange>,
+  streets: Map<string, StreetInfo>,
 ): Endereco {
-  const real = parseHouseNumber(feature.numeroRaw);
+  const info = streets.get(normalize(feature.street));
 
+  const cidade = feature.cidade ?? (info ? mode(info.cidades) : null);
+  const bairro = feature.bairro ?? (info ? mode(info.bairros) : null);
+
+  const real = parseHouseNumber(feature.numeroRaw);
   let numero = real;
   let numeroEstimado = false;
-  if (real === null) {
-    const range = ranges.get(normalize(feature.street));
-    if (range) {
-      numero = Math.round((range.min + range.max) / 2);
-      numeroEstimado = true;
-    }
+  if (real === null && info?.hasNumbers) {
+    numero = Math.round((info.min + info.max) / 2);
+    numeroEstimado = true;
   }
 
   return {
-    label:  buildLabel(feature),
-    lat:    feature.lat,
-    lon:    feature.lon,
-    tipo:   feature.tipo,
-    cidade: feature.cidade,
-    bairro: feature.bairro,
+    label: buildLabel({ ...feature, cidade, bairro }),
+    lat:   feature.lat,
+    lon:   feature.lon,
+    tipo:  feature.tipo,
+    cidade,
+    bairro,
     numero,
     numeroEstimado,
   };
@@ -100,12 +148,12 @@ export async function ingest(options: IngestOptions): Promise<number> {
   const db = openDb(options.dbPath, { readonly: false });
 
   try {
-    // 1º passe: faixas de numeração por via.
-    const ranges = new Map<string, NumberRange>();
+    // 1º passe: agrega numeração e cidade/bairro por via.
+    const streets = new Map<string, StreetInfo>();
     for await (const feature of source(options.pbfPath)) {
-      collectRange(ranges, feature);
+      collectStreet(streets, feature);
     }
-    console.log(`  ${ranges.size.toLocaleString("pt-BR")} vias com numeração conhecida`);
+    console.log(`  ${streets.size.toLocaleString("pt-BR")} vias agregadas`);
 
     db.exec("DROP TABLE IF EXISTS enderecos;");
     db.exec(SCHEMA_SQL);
@@ -119,9 +167,12 @@ export async function ingest(options: IngestOptions): Promise<number> {
     let count = 0;
     db.exec("BEGIN");
     for await (const feature of source(options.pbfPath)) {
-      const e = finalize(feature, ranges);
+      const e = finalize(feature, streets);
+      // texto indexado: só tags próprias da feature (não o enriquecido), para
+      // não inflar documentos curtos e preservar o ranking BM25.
+      const texto = normalize(buildLabel(feature));
       insert.run(
-        normalize(e.label),
+        texto,
         e.label,
         e.lat,
         e.lon,
