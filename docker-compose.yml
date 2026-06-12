@@ -33,6 +33,26 @@ services:
       - traefik.http.routers.tiles.tls.certresolver=le
       - traefik.http.services.tiles.loadbalancer.server.port=80
 
+  geocode:
+    build:
+      context: ./services/geocode
+      dockerfile: DockerFile
+    restart: unless-stopped
+    # geocode.db gerado no host pela ingestão (npm run convert && npm run ingest)
+    volumes:
+      - /opt/maps/geocode:/data:ro
+    environment:
+      - GEOCODE_DB_PATH=/data/geocode.db
+      - PORT=3000
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.geocode.rule=Host(`atlante.yurikanegae.com`) && PathPrefix(`/geocode`)"
+      - traefik.http.routers.geocode.entrypoints=websecure
+      - traefik.http.routers.geocode.tls.certresolver=le
+      - traefik.http.services.geocode.loadbalancer.server.port=3000
+
   frontend:
     build:
       context: ./services/frontend
